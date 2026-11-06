@@ -1,0 +1,121 @@
+global proc string rigidWrapAE_nodeFromPlug(string $plug)
+{
+    string $parts[];
+    tokenize $plug "." $parts;
+    if (size($parts) > 0) {
+        return $parts[0];
+    }
+    return $plug;
+}
+
+global proc rigidWrapAE_drawDebug(string $node)
+{
+    if (!`objExists $node`) {
+        warning("rigidWrap: node does not exist: " + $node);
+        return;
+    }
+    rigidWrapDebugDraw $node;
+}
+
+global proc rigidWrapAE_clearDebug(string $node)
+{
+    if (!`objExists $node`) {
+        warning("rigidWrap: node does not exist: " + $node);
+        return;
+    }
+    rigidWrapDebugDraw -clear $node;
+}
+
+global proc rigidWrapAE_openTool()
+{
+    python("import rigidWrapUI; rigidWrapUI.show()");
+}
+
+global proc rigidWrapAE_toolsNew(string $plug)
+{
+    string $node = rigidWrapAE_nodeFromPlug($plug);
+
+    columnLayout -adjustableColumn true;
+        rowLayout -numberOfColumns 3 -adjustableColumn 1
+            -columnAttach3 "both" "both" "both"
+            -columnWidth3 110 110 110;
+            button -label "Draw Debug" -annotation "Create or refresh the debug locator for this deformer." -command ("rigidWrapAE_drawDebug \"" + $node + "\"");
+            button -label "Clear Debug" -annotation "Remove debug locators connected to this deformer." -command ("rigidWrapAE_clearDebug \"" + $node + "\"");
+            button -label "Open Tool" -annotation "Open the compact rigidWrap Bind and Tools window." -command "rigidWrapAE_openTool";
+        setParent ..;
+    setParent ..;
+}
+
+global proc rigidWrapAE_toolsReplace(string $plug)
+{
+}
+
+global proc AErigidWrapTemplate(string $nodeName)
+{
+    editorTemplate -beginScrollLayout;
+
+    editorTemplate -beginLayout "Main" -collapse 0;
+        editorTemplate -annotation "Overall deformation influence: 0 disables the deformer, 1 applies the full result. Partial values blend vertex positions and may change island shape." -addControl "envelope";
+        editorTemplate -annotation "Move islands along the fitted driver normal, in world-space scene units. Positive moves outward. This offset is separate from collision lift and its movement limits." -addControl "normalOffset";
+        editorTemplate -annotation "Amount of fitted rigid rotation: 0 follows position only, 1 follows full rotation. Intermediate values blend rotation without shrinking the rigid island." -addControl "rotationStrength";
+        editorTemplate -annotation "Reduce ambiguous twist when driver samples compress or fold. Default 1 enables automatic stabilization; 0 uses the direct fit. Healthy patches retain their rotation. No previous-frame history is used." -addControl "rotationStability";
+    editorTemplate -endLayout;
+
+    editorTemplate -beginLayout "Relaxation" -collapse 0;
+        editorTemplate -annotation "Restore signed bind spacing along the original neighbor directions carried by the current driver frames. 0 is off; 1 is strongest. Neighbor corrections are averaged and applied together before collision, independently of collision shape mode. Spacing respects attachment movement limits." -addControl "relaxation";
+        editorTemplate -annotation "Spacing solve passes; default 4. More passes spread corrections through neighboring islands and cost more evaluation time." -addControl "relaxationIterations";
+        editorTemplate -annotation "Restrict spacing corrections to the driver tangent: 0 allows full 3D movement, 1 removes normal movement. Collision uses Collision Lift separately." -addControl "tangentBlend";
+    editorTemplate -endLayout;
+
+    editorTemplate -beginLayout "Collision" -collapse 0;
+        editorTemplate -label "Collision" -annotation "Contact correction amount: 0 is off, 1 uses the maximum response strength. Damping, finite iterations, and movement limits can still leave penetration. Only stored bind-neighbor links collide, using stable bind-relative directions. Rebind with more neighbors to add excluded pairs. Intentional bind-pose overlap is preserved; additional penetration triggers correction. Lower values soften the response." -addControl "collisionStrength";
+        editorTemplate -label "Collision Slide Bias" -annotation "Prefer sliding along each scale's bound footprint long axis and resist sideways drift. 0 uses balanced sliding; 1 is strongest. Round footprints fade this preference. Applies to collision only in every shape mode, requires no rebind, and can leave extra penetration. The long axis is inferred from geometry, not an authored row direction." -addControl "collisionSlideBias";
+        editorTemplate -beginLayout "Advanced Collision" -collapse 1;
+        editorTemplate -annotation "Capsule is the default for interactive use. Capsule and Radius use simpler enclosing shapes that can leave extra clearance. Choose ConvexHull for a closer fit to the bind geometry; complex hulls cost more. All modes fill concave gaps." -addControl "collisionMode";
+        editorTemplate -annotation "Minimum full normal thickness before XYZ scaling; default 0.01. Preserves actual geometry depth and pads thinner shapes outward. Collision Shape Size does not multiply this minimum." -addControl "collisionThickness";
+        editorTemplate -label "Collision Shape Size" -annotation "Advanced collision-shape size, separate from the Collision amount. Default 1 uses the bind geometry size. Smaller values shrink the outline and geometric depth; larger values expand them. Bind overlap is recalculated at this size so the rest pose stays preserved without rebinding. Additional penetration from deformation triggers correction. Minimum thickness is applied afterward. 0 disables collision." -addControl "collisionScale";
+        editorTemplate -annotation "Maximum contact passes: default 16, range 1 to 32. Stops early on convergence or when movement is blocked. More passes can reduce crowded or soft-contact overlap but cost more time." -addControl "collisionIterations";
+        editorTemplate -annotation "Allow outward normal motion during collision: 0 permits tangent sliding only, 1 allows full outward mobility. Max Lift still limits the total motion. Collision never deliberately pushes inward." -addControl "collisionLift";
+        editorTemplate -annotation "Soften each contact correction by dividing it by 1 plus this value. 0 is firmest; default 0.05. Higher values may need more passes and can leave overlap." -addControl "collisionSoftness";
+        editorTemplate -endLayout;
+    editorTemplate -endLayout;
+
+    editorTemplate -beginLayout "Scale" -collapse 0;
+        editorTemplate -annotation "Resize each island along bind-world X around its attachment pivot. Also affects spacing, collision geometry and movement budgets. 1 is unchanged; negative values mirror, 0 collapses this dimension." -addControl "scaleX";
+        editorTemplate -annotation "Resize each island along bind-world Y around its attachment pivot. Also affects spacing, collision geometry and movement budgets. Connect the same value to X, Y and Z for uniform scaling." -addControl "scaleY";
+        editorTemplate -annotation "Resize each island along bind-world Z around its attachment pivot. Also affects spacing, collision geometry and movement budgets. These are bind-world axes, not automatically joint-local axes." -addControl "scaleZ";
+    editorTemplate -endLayout;
+
+    editorTemplate -beginLayout "Attachment" -collapse 0;
+        editorTemplate -annotation "Maximum total tangent correction from the driven pose, in bind-world units before XYZ scaling. -1 is unlimited, 0 locks sliding. Applies to spacing and collision; tight limits can leave overlap." -addControl "maxSlide";
+        editorTemplate -annotation "Maximum total normal correction from the driven pose, in bind-world units before XYZ scaling. -1 is unlimited, 0 locks normal correction. Bounds both inward spacing motion and outward collision lift; Normal Offset is separate." -addControl "maxLift";
+        editorTemplate -annotation "Attraction back to the driver-fitted pose during contact solving. 0 adds no attraction, 1 pins the island completely. Partial attraction allows collision correction; full pinning can leave overlap." -addControl "attachmentStrength";
+    editorTemplate -endLayout;
+
+    editorTemplate -beginLayout "GPU Override" -collapse 0;
+        editorTemplate -annotation "Force this deformer to use CPU evaluation. Turn off to allow the Maya GPU override when eligible. Collision preparation uses the same CPU solver in either path; GPU handles final vertex deformation." -addControl "blockGPU";
+    editorTemplate -endLayout;
+
+    editorTemplate -beginLayout "Tools" -collapse 0;
+        editorTemplate -callCustom "rigidWrapAE_toolsNew" "rigidWrapAE_toolsReplace" "message";
+    editorTemplate -endLayout;
+
+    editorTemplate -beginLayout "Connections" -collapse 1;
+        editorTemplate -annotation "Connected deforming driver geometry, normally its worldMesh output. Rebind after changing the driver or its topology. Ordinary driver animation does not require rebinding." -addControl "driverMesh";
+    editorTemplate -endLayout;
+
+    editorTemplate -suppress "bindData";
+    editorTemplate -suppress "spacingWeightList";
+    editorTemplate -suppress "spacingWeights";
+    editorTemplate -suppress "collisionWeightList";
+    editorTemplate -suppress "collisionWeights";
+    editorTemplate -suppress "spacingBiasList";
+    editorTemplate -suppress "spacingBias";
+    editorTemplate -suppress "weightList";
+    editorTemplate -suppress "matrix";
+    editorTemplate -suppress "deformerData";
+
+    AEdependNodeTemplate $nodeName;
+    editorTemplate -addExtraControls;
+    editorTemplate -endScrollLayout;
+}

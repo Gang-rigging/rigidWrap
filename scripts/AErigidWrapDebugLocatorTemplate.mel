@@ -1,0 +1,95 @@
+global proc string rigidWrapDebugLocatorAE_nodeFromPlug(string $plug)
+{
+    string $parts[];
+    tokenize $plug "." $parts;
+    if (size($parts) > 0) {
+        return $parts[0];
+    }
+    return $plug;
+}
+
+global proc rigidWrapDebugLocatorAE_delete(string $node)
+{
+    if (!`objExists $node`) {
+        return;
+    }
+
+    string $parents[] = `listRelatives -parent -path $node`;
+    if (size($parents) > 0) {
+        delete $parents[0];
+    } else {
+        delete $node;
+    }
+}
+
+global proc rigidWrapDebugLocatorAE_selectDeformer(string $node)
+{
+    if (!`objExists $node`) {
+        return;
+    }
+
+    string $connections[] = `listConnections -source true -destination false ($node + ".rigidWrapNode")`;
+    if (size($connections) > 0 && `objExists $connections[0]`) {
+        select -replace $connections[0];
+    }
+}
+
+global proc rigidWrapDebugLocatorAE_toolsNew(string $plug)
+{
+    string $node = rigidWrapDebugLocatorAE_nodeFromPlug($plug);
+
+    columnLayout -adjustableColumn true;
+        rowLayout -numberOfColumns 2 -adjustableColumn 1
+            -columnAttach2 "both" "both"
+            -columnWidth2 120 120;
+            button -label "Select Deformer" -annotation "Select the rigidWrap deformer connected to this locator." -command ("rigidWrapDebugLocatorAE_selectDeformer \"" + $node + "\"");
+            button -label "Delete Debug" -annotation "Delete this debug locator and its transform. The deformer and driven mesh are kept." -command ("rigidWrapDebugLocatorAE_delete \"" + $node + "\"");
+        setParent ..;
+    setParent ..;
+}
+
+global proc rigidWrapDebugLocatorAE_toolsReplace(string $plug)
+{
+}
+
+global proc AErigidWrapDebugLocatorTemplate(string $nodeName)
+{
+    editorTemplate -beginScrollLayout;
+
+    editorTemplate -beginLayout "Display" -collapse 0;
+        editorTemplate -annotation "Choose which collision shapes to draw. Current uses the deformer mode; Radius, Capsule, ConvexHull and All preview alternatives without changing the solver." -addControl "debugMode";
+        editorTemplate -annotation "Draw debug lines through other geometry. Turn off to respect viewport depth." -addControl "xray";
+        editorTemplate -annotation "Viewport line thickness for debug shapes, links and arrows. Larger values improve visibility without affecting deformation." -addControl "lineWidth";
+        editorTemplate -annotation "Opacity of debug drawing: lower values are more transparent. Does not affect mesh visibility or the collision solve." -addControl "opacity";
+    editorTemplate -endLayout;
+
+    editorTemplate -beginLayout "Visibility" -collapse 0;
+        editorTemplate -annotation "Show stored spacing-neighbor links. These are the relaxation graph, not all dynamically discovered collision pairs." -addControl "showEdges";
+        editorTemplate -annotation "Show a center marker for each rigid island. Marker size is controlled by Center Size." -addControl "showCenters";
+        editorTemplate -annotation "Show island footprint orientation axes to inspect collision shape alignment." -addControl "showAxes";
+        editorTemplate -annotation "Show active collision-pair links and accumulated correction arrows. Requires Solve Collision Debug to compute the contact diagnostics." -addControl "showCollision";
+        editorTemplate -annotation "Show the outward-normal part of collision corrections. Requires Solve Collision Debug. This only displays lift; Collision Lift on the deformer controls the actual motion." -addControl "showLift";
+    editorTemplate -endLayout;
+
+    editorTemplate -beginLayout "Performance" -collapse 0;
+        editorTemplate -annotation "Position markers and shapes at the evaluated driven-mesh centers. Usually lighter than rerunning contact diagnostics. Partial envelope or vertex weights can make a rigid outline differ from the visible mesh." -addControl "useResultMeshCenters";
+        editorTemplate -annotation "Run the shared contact solver for pair links, correction arrows and unresolved-contact markers. Adds evaluation work. Turn off for a lighter geometry-only overlay." -addControl "solveCollisionDebug";
+    editorTemplate -endLayout;
+
+    editorTemplate -beginLayout "Marker Sizes" -collapse 0;
+        editorTemplate -annotation "Scale the island center markers. Only changes debug drawing." -addControl "centerSize";
+        editorTemplate -annotation "Display multiplier for collision and lift arrows. 1 shows the actual correction length; larger values make small movements easier to see." -addControl "vectorScale";
+    editorTemplate -endLayout;
+
+    editorTemplate -beginLayout "Tools" -collapse 0;
+        editorTemplate -callCustom "rigidWrapDebugLocatorAE_toolsNew" "rigidWrapDebugLocatorAE_toolsReplace" "message";
+    editorTemplate -endLayout;
+
+    editorTemplate -beginLayout "Connection" -collapse 1;
+        editorTemplate -annotation "The rigidWrap deformer inspected by this locator. Its bind data, driver and solver settings supply the debug geometry." -addControl "rigidWrapNode";
+    editorTemplate -endLayout;
+
+    AEdependNodeTemplate $nodeName;
+    editorTemplate -addExtraControls;
+    editorTemplate -endScrollLayout;
+}
